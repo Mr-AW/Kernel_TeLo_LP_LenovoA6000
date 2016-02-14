@@ -4208,6 +4208,11 @@ void msm8x16_wcd_hs_detect_exit(struct snd_soc_codec *codec)
 }
 EXPORT_SYMBOL(msm8x16_wcd_hs_detect_exit);
 
+#ifdef CONFIG_SOUND_CONTROL_HAX_GPL
+struct snd_kcontrol_new *gpl_faux_snd_controls_ptr =
+		(struct snd_kcontrol_new *)msm8x16_wcd_snd_controls;
+#endif
+
 static void msm8x16_wcd_set_micb_v(struct snd_soc_codec *codec)
 {
 
