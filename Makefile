@@ -241,8 +241,8 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 
 HOSTCC       = gcc
 HOSTCXX      = g++
-HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 -fomit-frame-pointer -fgcse-las -fgraphite -floop-flatten -floop-parallelize-all -ftree-loop-linear -floop-interchange -floop-strip-mine -floop-block -pipe -std=gnu89
-HOSTCXXFLAGS = -O3 -fgcse-las -floop-flatten -floop-parallelize-all -ftree-loop-linear -floop-interchange -floop-strip-mine -floop-block -pipe
+HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -Ofast -fomit-frame-pointer -fgcse-las
+HOSTCXXFLAGS = -Ofast -fgcse-las -DNDEBUG -pipe
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
@@ -347,7 +347,7 @@ CC		= $(srctree)/scripts/gcc-wrapper.py $(REAL_CC)
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
 
-KERNEL_FLAGS	= -marm -mtune=cortex-a53 -mfpu=crypto-neon-fp-armv8 \
+KERNEL_FLAGS	= -Ofast -marm -mtune=cortex-a53 -mcpu=cortex-a53 -mfpu=crypto-neon-fp-armv8 \
 		  -mvectorize-with-neon-quad -fgcse-after-reload -fgcse-sm \
 		  -fgcse-las -ftree-loop-im -ftree-loop-ivcanon -fweb \
 		  -frename-registers -ftree-loop-linear -ftree-vectorize \
@@ -386,7 +386,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Wno-format-security \
 		   -fno-delete-null-pointer-checks \
 		   -Wno-bool-compare \
-		   -std=gnu89 \
+		   -Wno-array-bounds \
 		   $(KERNEL_FLAGS)
 
 KBUILD_AFLAGS_KERNEL :=
@@ -588,7 +588,7 @@ all: vmlinux
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os $(call cc-disable-warning,maybe-uninitialized,)
 else
-KBUILD_CFLAGS	+= -O2
+KBUILD_CFLAGS	+= -Ofast $(call cc-disable-warning,maybe-uninitialized,)
 endif
 
 include $(srctree)/arch/$(SRCARCH)/Makefile
