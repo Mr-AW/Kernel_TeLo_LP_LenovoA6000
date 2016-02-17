@@ -52,6 +52,9 @@
 #define SENSOR_SCALING_FACTOR 1
 #define CPU_DEVICE "cpu%d"
 
+unsigned int temp_threshold = 65;
+module_param(temp_threshold, int, 0755);
+
 static struct msm_thermal_data msm_thermal_info;
 static struct delayed_work check_temp_work;
 static bool core_control_enabled;
@@ -1033,9 +1036,9 @@ static void do_cluster_freq_ctrl(long temp)
 	bool mitigate = false;
 	struct cluster_info *cluster_ptr = NULL;
 
-	if (temp >= msm_thermal_info.limit_temp_degC)
+	if (temp >= temp_threshold)
 		mitigate = true;
-	else if (temp < msm_thermal_info.limit_temp_degC -
+	else if (temp < temp_threshold -
 		 msm_thermal_info.temp_hysteresis_degC)
 		mitigate = false;
 	else
@@ -2624,7 +2627,7 @@ static void do_freq_control(long temp)
 	if (!freq_table_get)
 		return;
 
-	if (temp >= msm_thermal_info.limit_temp_degC) {
+	if (temp >= temp_threshold) {
 		if (limit_idx == limit_idx_low)
 			return;
 
@@ -2632,7 +2635,7 @@ static void do_freq_control(long temp)
 		if (limit_idx < limit_idx_low)
 			limit_idx = limit_idx_low;
 		max_freq = table[limit_idx].frequency;
-	} else if (temp < msm_thermal_info.limit_temp_degC -
+	} else if (temp < temp_threshold -
 		 msm_thermal_info.temp_hysteresis_degC) {
 		if (limit_idx == limit_idx_high)
 			return;
@@ -3543,14 +3546,15 @@ static int msm_thermal_notify(enum thermal_trip_type type, int temp, void *data)
 	return 0;
 }
 
-int sensor_mgr_init_threshold(struct threshold_info *thresh_inp,
+int sensor_mgr_init_threshold(struct device *dev,
+	struct threshold_info *thresh_inp,
 	int sensor_id, int32_t high_temp, int32_t low_temp,
 	void (*callback)(struct therm_threshold *))
 {
 	int ret = 0, i;
 	struct therm_threshold *thresh_ptr;
 
-	if (!callback || !thresh_inp
+	if (!dev || !callback || !thresh_inp
 		|| sensor_id == -ENODEV) {
 		pr_err("Invalid input\n");
 		ret = -EINVAL;
@@ -3561,6 +3565,7 @@ int sensor_mgr_init_threshold(struct threshold_info *thresh_inp,
 		goto init_thresh_exit;
 	}
 
+	mutex_lock(&threshold_mutex);
 	thresh_inp->thresh_ct = (sensor_id == MONITOR_ALL_TSENS) ?
 						max_tsens_num : 1;
 	thresh_inp->thresh_triggered = false;
@@ -3569,7 +3574,7 @@ int sensor_mgr_init_threshold(struct threshold_info *thresh_inp,
 	if (!thresh_inp->thresh_list) {
 		pr_err("kzalloc failed for thresh\n");
 		ret = -ENOMEM;
-		goto init_thresh_exit;
+		goto init_thresh_unlock;
 	}
 
 	thresh_ptr = thresh_inp->thresh_list;
@@ -3609,26 +3614,34 @@ int sensor_mgr_init_threshold(struct threshold_info *thresh_inp,
 		thresh_ptr->threshold[0].data =
 		thresh_ptr->threshold[1].data = (void *)thresh_ptr;
 	}
-	mutex_lock(&threshold_mutex);
 	list_add_tail(&thresh_inp->list_ptr, &thresholds_list);
+
+init_thresh_unlock:
 	mutex_unlock(&threshold_mutex);
 
 init_thresh_exit:
 	return ret;
 }
 
-void sensor_mgr_remove_threshold(struct threshold_info *thresh_inp)
+void sensor_mgr_remove_threshold(struct device *dev,
+			struct threshold_info *thresh_inp)
 {
 	int i;
 	struct therm_threshold *thresh_ptr;
 
+	mutex_lock(&threshold_mutex);
 	for (i = 0; i < thresh_inp->thresh_ct; i++) {
 		thresh_ptr = &thresh_inp->thresh_list[i];
 		thresh_ptr->trip_triggered = -1;
 		sensor_cancel_trip(thresh_ptr->sensor_id,
-				thresh_ptr->threshold);
+				&thresh_ptr->threshold[0]);
+		sensor_cancel_trip(thresh_ptr->sensor_id,
+				&thresh_ptr->threshold[1]);
 	}
-	mutex_lock(&threshold_mutex);
+	kfree(thresh_inp->thresh_list);
+	thresh_inp->thresh_list = NULL;
+	thresh_inp->thresh_ct = 0;
+	thresh_inp->thresh_triggered = false;
 	list_del(&thresh_inp->list_ptr);
 	mutex_unlock(&threshold_mutex);
 }
@@ -4623,7 +4636,8 @@ static int probe_vdd_mx(struct device_node *node,
 		goto read_node_done;
 	}
 
-	ret = sensor_mgr_init_threshold(&thresh[MSM_VDD_MX_RESTRICTION],
+	ret = sensor_mgr_init_threshold(&pdev->dev,
+			&thresh[MSM_VDD_MX_RESTRICTION],
 			MONITOR_ALL_TSENS,
 			data->vdd_mx_temp_degC + data->vdd_mx_temp_hyst_degC,
 			data->vdd_mx_temp_degC, vdd_mx_notify);
@@ -4732,7 +4746,8 @@ static int probe_vdd_rstr(struct device_node *node,
 					ret);
 			goto read_node_fail;
 		}
-		ret = sensor_mgr_init_threshold(&thresh[MSM_VDD_RESTRICTION],
+		ret = sensor_mgr_init_threshold(&pdev->dev,
+			&thresh[MSM_VDD_RESTRICTION],
 			MONITOR_ALL_TSENS,
 			data->vdd_rstr_temp_hyst_degC, data->vdd_rstr_temp_degC,
 			vdd_restriction_notify);
@@ -4907,7 +4922,8 @@ static int probe_ocr(struct device_node *node, struct msm_thermal_data *data,
 		}
 	}
 
-	ret = sensor_mgr_init_threshold(&thresh[MSM_OCR], data->ocr_sensor_id,
+	ret = sensor_mgr_init_threshold(&pdev->dev,
+		&thresh[MSM_OCR], data->ocr_sensor_id,
 		data->ocr_temp_degC,
 		data->ocr_temp_degC - data->ocr_temp_hyst_degC,
 		ocr_notify);
@@ -5141,7 +5157,8 @@ static int probe_gfx_phase_ctrl(struct device_node *node,
 		goto probe_gfx_crit;
 	}
 
-	ret = sensor_mgr_init_threshold(&thresh[MSM_GFX_PHASE_CTRL_WARM],
+	ret = sensor_mgr_init_threshold(&pdev->dev,
+		&thresh[MSM_GFX_PHASE_CTRL_WARM],
 		data->gfx_sensor,
 		data->gfx_phase_warm_temp_degC, data->gfx_phase_warm_temp_degC -
 		data->gfx_phase_warm_temp_hyst_degC,
@@ -5167,7 +5184,8 @@ probe_gfx_crit:
 	if (ret)
 		goto probe_gfx_exit;
 
-	ret = sensor_mgr_init_threshold(&thresh[MSM_GFX_PHASE_CTRL_HOT],
+	ret = sensor_mgr_init_threshold(&pdev->dev,
+		&thresh[MSM_GFX_PHASE_CTRL_HOT],
 		data->gfx_sensor,
 		data->gfx_phase_hot_temp_degC, data->gfx_phase_hot_temp_degC -
 		data->gfx_phase_hot_temp_hyst_degC,
@@ -5234,7 +5252,8 @@ static int probe_cx_phase_ctrl(struct device_node *node,
 	if (ret)
 		goto probe_cx_exit;
 
-	ret = sensor_mgr_init_threshold(&thresh[MSM_CX_PHASE_CTRL_HOT],
+	ret = sensor_mgr_init_threshold(&pdev->dev,
+		&thresh[MSM_CX_PHASE_CTRL_HOT],
 		MONITOR_ALL_TSENS,
 		data->cx_phase_hot_temp_degC, data->cx_phase_hot_temp_degC -
 		data->cx_phase_hot_temp_hyst_degC,
@@ -5268,7 +5287,8 @@ static int probe_therm_reset(struct device_node *node,
 	if (ret)
 		goto PROBE_RESET_EXIT;
 
-	ret = sensor_mgr_init_threshold(&thresh[MSM_THERM_RESET],
+	ret = sensor_mgr_init_threshold(&pdev->dev,
+		&thresh[MSM_THERM_RESET],
 		MONITOR_ALL_TSENS,
 		data->therm_reset_temp_degC, data->therm_reset_temp_degC - 10,
 		therm_reset_notify);
@@ -5456,41 +5476,34 @@ static int msm_thermal_dev_exit(struct platform_device *inp_dev)
 
 	msm_thermal_ioctl_cleanup();
 	if (thresh) {
-		if (vdd_rstr_enabled) {
-			sensor_mgr_remove_threshold(
+		if (therm_reset_enabled)
+			sensor_mgr_remove_threshold(&inp_dev->dev,
+				&thresh[MSM_THERM_RESET]);
+		if (vdd_rstr_enabled)
+			sensor_mgr_remove_threshold(&inp_dev->dev,
 				&thresh[MSM_VDD_RESTRICTION]);
-			kfree(thresh[MSM_VDD_RESTRICTION].thresh_list);
-		}
-		if (cx_phase_ctrl_enabled) {
-			sensor_mgr_remove_threshold(
+		if (cx_phase_ctrl_enabled)
+			sensor_mgr_remove_threshold(&inp_dev->dev,
 				&thresh[MSM_CX_PHASE_CTRL_HOT]);
-			kfree(thresh[MSM_CX_PHASE_CTRL_HOT].thresh_list);
-		}
-		if (gfx_warm_phase_ctrl_enabled) {
-			sensor_mgr_remove_threshold(
+		if (gfx_warm_phase_ctrl_enabled)
+			sensor_mgr_remove_threshold(&inp_dev->dev,
 				&thresh[MSM_GFX_PHASE_CTRL_WARM]);
-			kfree(thresh[MSM_GFX_PHASE_CTRL_WARM].thresh_list);
-		}
-		if (gfx_crit_phase_ctrl_enabled) {
-			sensor_mgr_remove_threshold(
+		if (gfx_crit_phase_ctrl_enabled)
+			sensor_mgr_remove_threshold(&inp_dev->dev,
 				&thresh[MSM_GFX_PHASE_CTRL_HOT]);
-			kfree(thresh[MSM_GFX_PHASE_CTRL_HOT].thresh_list);
-		}
 		if (ocr_enabled) {
 			for (i = 0; i < ocr_rail_cnt; i++)
 				kfree(ocr_rails[i].attr_gp.attrs);
 			kfree(ocr_rails);
 			ocr_rails = NULL;
-			sensor_mgr_remove_threshold(
+			sensor_mgr_remove_threshold(&inp_dev->dev,
 				&thresh[MSM_OCR]);
-			kfree(thresh[MSM_OCR].thresh_list);
 		}
 		if (vdd_mx_enabled) {
 			kfree(mx_kobj);
 			kfree(mx_attr_group.attrs);
-			sensor_mgr_remove_threshold(
+			sensor_mgr_remove_threshold(&inp_dev->dev,
 				&thresh[MSM_VDD_MX_RESTRICTION]);
-			kfree(thresh[MSM_VDD_MX_RESTRICTION].thresh_list);
 		}
 		kfree(thresh);
 		thresh = NULL;
