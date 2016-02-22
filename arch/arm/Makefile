@@ -258,7 +258,15 @@ core-$(CONFIG_VFP)		+= arch/arm/vfp/
 core-$(CONFIG_XEN)		+= arch/arm/xen/
 core-$(CONFIG_KVM_ARM_HOST) 	+= arch/arm/kvm/
 
-core-y	+= arch/arm/hotplug/
+core-$(CONFIG_INTELLI_PLUG)	+= arch/arm/hotplug/INTELLIPLUG/
+core-$(CONFIG_ALUCARD_HOTPLUG)	+= arch/arm/hotplug/ALUCARD/
+core-$(CONFIG_BRICKED_HOTPLUG)	+= arch/arm/hotplug/BRICKED/
+core-$(CONFIG_MSM_HOTPLUG)	+= arch/arm/hotplug/MSMHOTPLUG/
+core-$(CONFIG_MSM_SLEEPER)	+= arch/arm/hotplug/MSMSLEEPER/
+core-$(CONFIG_THUNDERPLUG_CONTROL)	+= arch/arm/hotplug/THUNDERPLUG/
+core-$(CONFIG_MAKO_HOTPLUG)	+= arch/arm/hotplug/MAKO/
+core-$(CONFIG_ZEN_DECISION)	+= arch/arm/hotplug/ZENDECISION/
+core-$(CONFIG_ASMP)	+= arch/arm/hotplug/AUTOSMP/
 
 # If we have a machine-specific directory, then include it in the build.
 core-y				+= arch/arm/kernel/ arch/arm/mm/ arch/arm/common/
