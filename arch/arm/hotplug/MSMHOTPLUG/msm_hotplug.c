@@ -844,6 +844,12 @@ static void msm_hotplug_stop(void)
 
 	destroy_workqueue(susp_wq);
 	destroy_workqueue(hotplug_wq);
+
+	/* online all core if hotplug disabled */
+	for_each_present_cpu(cpu) {
+		if (!cpu_online(cpu))
+			cpu_up(cpu);
+	}
 }
 
 static unsigned int *get_tokenized_data(const char *buf, int *num_tokens)

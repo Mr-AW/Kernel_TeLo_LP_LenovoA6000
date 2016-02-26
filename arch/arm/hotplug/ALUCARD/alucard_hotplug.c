@@ -376,6 +376,7 @@ static void hotplug_start(void)
 
 static void hotplug_stop(void)
 {
+	unsigned int cpu;
 #ifdef CONFIG_POWERSUSPEND
 	unregister_power_suspend(&alucard_hotplug_power_suspend_driver);
 #else
@@ -386,6 +387,12 @@ static void hotplug_stop(void)
 	get_online_cpus();
 	unregister_hotcpu_notifier(&alucard_hotplug_nb);
 	put_online_cpus();
+
+	/* online all core if hotplug disabled */
+	for_each_present_cpu(cpu) {
+		if (!cpu_online(cpu))
+			cpu_up(cpu);
+	}
 }
 
 #define show_one(file_name, object)					\
