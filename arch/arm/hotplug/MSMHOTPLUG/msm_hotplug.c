@@ -813,7 +813,7 @@ err_out:
 	return ret;
 }
 
-static void msm_hotplug_stop(void)
+static void __ref msm_hotplug_stop(void)
 {
 	int cpu;
 	struct down_lock *dl;

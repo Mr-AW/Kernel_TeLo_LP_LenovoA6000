@@ -374,7 +374,7 @@ static void hotplug_start(void)
 #endif
 }
 
-static void hotplug_stop(void)
+static void __ref hotplug_stop(void)
 {
 	unsigned int cpu;
 #ifdef CONFIG_POWERSUSPEND

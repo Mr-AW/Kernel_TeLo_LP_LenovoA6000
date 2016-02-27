@@ -38,6 +38,7 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 #include <linux/kernel_stat.h>
+#include <linux/sched/rt.h>
 
 /******************** Tunable parameters: ********************/
 
@@ -218,18 +219,6 @@ static inline u64 get_cpu_idle_time_jiffy(unsigned int cpu, u64 *wall) {
 	return jiffies_to_usecs(idle_time);
 }
 
-static inline u64 get_cpu_idle_time(unsigned int cpu, u64 *wall)
-{
-	u64 idle_time = get_cpu_idle_time_us(cpu, NULL);
-
-	if (idle_time == -1ULL)
-		return get_cpu_idle_time_jiffy(cpu, wall);
-	else
-		idle_time += get_cpu_iowait_time_us(cpu, wall);
-
-	return idle_time;
-}
-
 static inline u64 get_cpu_iowait_time(unsigned int cpu, u64 *wall) {
 	u64 iowait_time = get_cpu_iowait_time_us(cpu, wall);
 
@@ -280,7 +269,7 @@ static inline unsigned int get_timer_delay(void) {
 static inline void dbs_timer_init(struct smartmax_info_s *this_smartmax) {
 	int delay = get_timer_delay();
 
-	INIT_DELAYED_WORK_DEFERRABLE(&this_smartmax->work, do_dbs_timer);
+	INIT_DEFERRABLE_WORK(&this_smartmax->work, do_dbs_timer);
 	queue_delayed_work_on(this_smartmax->cpu, smartmax_wq, &this_smartmax->work, delay);
 }
 
@@ -407,7 +396,7 @@ static void inline cpufreq_smartmax_calc_load(int j)
 
 	j_this_smartmax = &per_cpu(smartmax_info, j);
 
-	cur_idle_time = get_cpu_idle_time(j, &cur_wall_time);
+	cur_idle_time = get_cpu_idle_time(j, &cur_wall_time, 0);
 	cur_iowait_time = get_cpu_iowait_time(j, &cur_wall_time);
 
 	wall_time = cur_wall_time - j_this_smartmax->prev_cpu_wall;
@@ -512,7 +501,7 @@ static void update_idle_time(bool online) {
 		j_this_smartmax = &per_cpu(smartmax_info, j);
 
 		j_this_smartmax->prev_cpu_idle = get_cpu_idle_time(j,
-				&j_this_smartmax->prev_cpu_wall);
+				&j_this_smartmax->prev_cpu_wall, 0);
 
 		if (ignore_nice)
 			j_this_smartmax->prev_cpu_nice = kcpustat_cpu(j).cpustat[CPUTIME_NICE];
@@ -885,7 +874,7 @@ static int cpufreq_smartmax_boost_task(void *data) {
 			if (policy->cur < cur_boost_freq) {
 				start_boost = true;
 				target_freq(policy, this_smartmax, cur_boost_freq, this_smartmax->old_freq, CPUFREQ_RELATION_H);
-				this_smartmax->prev_cpu_idle = get_cpu_idle_time(cpu, &this_smartmax->prev_cpu_wall);
+				this_smartmax->prev_cpu_idle = get_cpu_idle_time(cpu, &this_smartmax->prev_cpu_wall, 0);
 			}
 			mutex_unlock(&this_smartmax->timer_mutex);
 		}
