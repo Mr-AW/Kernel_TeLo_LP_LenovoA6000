@@ -2,7 +2,10 @@
  * Author: Paul Reioux aka Faux123 <reioux@gmail.com>
  *
  * WCD93xx sound control module
- * Copyright 2013 Paul Reioux
+ * Copyright 2013~2014 Paul Reioux
+ *
+ * Adapted to Qualcomm msm8x16-wcd codec
+ * Mr. AW (Aditya Wicaksono) <mr.aw173@gmail.com>
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,101 +22,53 @@
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
 #include <linux/kallsyms.h>
-#include <linux/mfd/wcd9xxx/core.h>
-#include <linux/mfd/wcd9xxx/wcd9310_registers.h>
+#include "msm8x16_wcd_registers.h"
 
 #define SOUND_CONTROL_MAJOR_VERSION	3
-#define SOUND_CONTROL_MINOR_VERSION	6
+#define SOUND_CONTROL_MINOR_VERSION	4
+
+#define REG_SZ	21
 
 extern struct snd_soc_codec *fauxsound_codec_ptr;
-extern int wcd9xxx_hw_revision;
 
 static int snd_ctrl_locked = 0;
-static int snd_rec_ctrl_locked = 0;
 
-unsigned int tabla_read(struct snd_soc_codec *codec, unsigned int reg);
-int tabla_write(struct snd_soc_codec *codec, unsigned int reg,
+unsigned int msm8x16_wcd_read(struct snd_soc_codec *codec, unsigned int reg);
+int msm8x16_wcd_write(struct snd_soc_codec *codec, unsigned int reg,
 		unsigned int value);
 
 
-#define REG_SZ	25
 static unsigned int cached_regs[] = {6, 6, 0, 0, 0, 0, 0, 0, 0, 0,
 			    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			    0, 0, 0, 0, 0 };
+			    0 };
 
 static unsigned int *cache_select(unsigned int reg)
 {
 	unsigned int *out = NULL;
 
         switch (reg) {
-                case TABLA_A_RX_HPH_L_GAIN:
+/*
+		case MSM8X16_WCD_A_RX_HPH_L_GAIN:
 			out = &cached_regs[0];
 			break;
-                case TABLA_A_RX_HPH_R_GAIN:
+                case MSM8X16_WCD_A_RX_HPH_R_GAIN:
 			out = &cached_regs[1];
 			break;
-                case TABLA_A_CDC_RX1_VOL_CTL_B2_CTL:
+*/
+                case MSM8X16_WCD_A_CDC_RX1_VOL_CTL_B2_CTL:
 			out = &cached_regs[4];
 			break;
-                case TABLA_A_CDC_RX2_VOL_CTL_B2_CTL:
+                case MSM8X16_WCD_A_CDC_RX2_VOL_CTL_B2_CTL:
 			out = &cached_regs[5];
 			break;
-                case TABLA_A_CDC_RX3_VOL_CTL_B2_CTL:
+                case MSM8X16_WCD_A_CDC_RX3_VOL_CTL_B2_CTL:
 			out = &cached_regs[6];
 			break;
-                case TABLA_A_CDC_RX4_VOL_CTL_B2_CTL:
-			out = &cached_regs[7];
-			break;
-                case TABLA_A_CDC_RX5_VOL_CTL_B2_CTL:
-			out = &cached_regs[8];
-			break;
-                case TABLA_A_CDC_RX6_VOL_CTL_B2_CTL:
-			out = &cached_regs[9];
-			break;
-                case TABLA_A_CDC_RX7_VOL_CTL_B2_CTL:
-			out = &cached_regs[10];
-			break;
-                case TABLA_A_CDC_TX1_VOL_CTL_GAIN:
+                case MSM8X16_WCD_A_CDC_TX1_VOL_CTL_GAIN:
 			out = &cached_regs[11];
 			break;
-                case TABLA_A_CDC_TX2_VOL_CTL_GAIN:
+                case MSM8X16_WCD_A_CDC_TX2_VOL_CTL_GAIN:
 			out = &cached_regs[12];
-			break;
-                case TABLA_A_CDC_TX3_VOL_CTL_GAIN:
-			out = &cached_regs[13];
-			break;
-                case TABLA_A_CDC_TX4_VOL_CTL_GAIN:
-			out = &cached_regs[14];
-			break;
-                case TABLA_A_CDC_TX5_VOL_CTL_GAIN:
-			out = &cached_regs[15];
-			break;
-                case TABLA_A_CDC_TX6_VOL_CTL_GAIN:
-			out = &cached_regs[16];
-			break;
-                case TABLA_A_CDC_TX7_VOL_CTL_GAIN:
-			out = &cached_regs[17];
-			break;
-                case TABLA_A_CDC_TX8_VOL_CTL_GAIN:
-			out = &cached_regs[18];
-			break;
-                case TABLA_A_CDC_TX9_VOL_CTL_GAIN:
-			out = &cached_regs[19];
-			break;
-                case TABLA_A_CDC_TX10_VOL_CTL_GAIN:
-			out = &cached_regs[20];
-			break;
-                case TABLA_A_RX_LINE_1_GAIN:
-			out = &cached_regs[21];
-			break;
-                case TABLA_A_RX_LINE_2_GAIN:
-			out = &cached_regs[22];
-			break;
-                case TABLA_A_RX_LINE_3_GAIN:
-			out = &cached_regs[23];
-			break;
-                case TABLA_A_RX_LINE_4_GAIN:
-			out = &cached_regs[24];
 			break;
         }
 	return out;
@@ -142,38 +97,24 @@ int snd_hax_reg_access(unsigned int reg)
 	int ret = 1;
 
 	switch (reg) {
-		case TABLA_A_RX_HPH_L_GAIN:
-		case TABLA_A_RX_HPH_R_GAIN:
-		case TABLA_A_RX_HPH_L_STATUS:
-		case TABLA_A_RX_HPH_R_STATUS:
+/*
+		case MSM8X16_WCD_A_RX_HPH_L_GAIN:
+		case MSM8X16_WCD_A_RX_HPH_R_GAIN:
+		case MSM8X16_WCD_A_RX_HPH_L_STATUS:
+		case MSM8X16_WCD_A_RX_HPH_R_STATUS:
 			if (snd_ctrl_locked > 1)
 				ret = 0;
 			break;
-		case TABLA_A_CDC_RX1_VOL_CTL_B2_CTL:
-		case TABLA_A_CDC_RX2_VOL_CTL_B2_CTL:
-		case TABLA_A_CDC_RX3_VOL_CTL_B2_CTL:
-		case TABLA_A_CDC_RX4_VOL_CTL_B2_CTL:
-		case TABLA_A_CDC_RX5_VOL_CTL_B2_CTL:
-		case TABLA_A_CDC_RX6_VOL_CTL_B2_CTL:
-		case TABLA_A_CDC_RX7_VOL_CTL_B2_CTL:
-		case TABLA_A_RX_LINE_1_GAIN:
-		case TABLA_A_RX_LINE_2_GAIN:
-		case TABLA_A_RX_LINE_3_GAIN:
-		case TABLA_A_RX_LINE_4_GAIN:
+*/
+		case MSM8X16_WCD_A_CDC_RX1_VOL_CTL_B2_CTL:
+		case MSM8X16_WCD_A_CDC_RX2_VOL_CTL_B2_CTL:
+		case MSM8X16_WCD_A_CDC_RX3_VOL_CTL_B2_CTL:
 			if (snd_ctrl_locked > 0)
 				ret = 0;
 			break;
-		case TABLA_A_CDC_TX1_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX2_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX3_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX4_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX5_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX6_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX7_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX8_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX9_VOL_CTL_GAIN:
-		case TABLA_A_CDC_TX10_VOL_CTL_GAIN:
-			if (snd_rec_ctrl_locked > 0)
+		case MSM8X16_WCD_A_CDC_TX1_VOL_CTL_GAIN:
+		case MSM8X16_WCD_A_CDC_TX2_VOL_CTL_GAIN:
+			if (snd_ctrl_locked > 0)
 				ret = 0;
 			break;
 		default:
@@ -200,8 +141,8 @@ static ssize_t cam_mic_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
         return sprintf(buf, "%u\n",
-		tabla_read(fauxsound_codec_ptr,
-			TABLA_A_CDC_TX6_VOL_CTL_GAIN));
+		msm8x16_wcd_read(fauxsound_codec_ptr,
+			MSM8X16_WCD_A_CDC_TX1_VOL_CTL_GAIN));
 
 }
 
@@ -213,8 +154,8 @@ static ssize_t cam_mic_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u", &lval, &chksum);
 
 	if (calc_checksum(lval, 0, chksum)) {
-		tabla_write(fauxsound_codec_ptr,
-			TABLA_A_CDC_TX6_VOL_CTL_GAIN, lval);
+		msm8x16_wcd_write(fauxsound_codec_ptr,
+			MSM8X16_WCD_A_CDC_TX1_VOL_CTL_GAIN, lval);
 	}
 	return count;
 }
@@ -223,8 +164,8 @@ static ssize_t mic_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%u\n",
-		tabla_read(fauxsound_codec_ptr,
-			TABLA_A_CDC_TX4_VOL_CTL_GAIN));
+		msm8x16_wcd_read(fauxsound_codec_ptr,
+			MSM8X16_WCD_A_CDC_TX2_VOL_CTL_GAIN));
 }
 
 static ssize_t mic_gain_store(struct kobject *kobj,
@@ -235,8 +176,8 @@ static ssize_t mic_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u", &lval, &chksum);
 
 	if (calc_checksum(lval, 0, chksum)) {
-		tabla_write(fauxsound_codec_ptr,
-			TABLA_A_CDC_TX4_VOL_CTL_GAIN, lval);
+		msm8x16_wcd_write(fauxsound_codec_ptr,
+			MSM8X16_WCD_A_CDC_TX2_VOL_CTL_GAIN, lval);
 	}
 	return count;
 
@@ -246,10 +187,10 @@ static ssize_t speaker_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
         return sprintf(buf, "%u %u\n",
-			tabla_read(fauxsound_codec_ptr,
-				TABLA_A_CDC_RX3_VOL_CTL_B2_CTL),
-			tabla_read(fauxsound_codec_ptr,
-				TABLA_A_CDC_RX4_VOL_CTL_B2_CTL));
+			msm8x16_wcd_read(fauxsound_codec_ptr,
+				MSM8X16_WCD_A_CDC_RX3_VOL_CTL_B2_CTL),
+			msm8x16_wcd_read(fauxsound_codec_ptr,
+				MSM8X16_WCD_A_CDC_RX3_VOL_CTL_B2_CTL));
 
 }
 
@@ -261,10 +202,10 @@ static ssize_t speaker_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
 	if (calc_checksum(lval, rval, chksum)) {
-		tabla_write(fauxsound_codec_ptr,
-			TABLA_A_CDC_RX3_VOL_CTL_B2_CTL, lval);
-		tabla_write(fauxsound_codec_ptr,
-			TABLA_A_CDC_RX4_VOL_CTL_B2_CTL, rval);
+		msm8x16_wcd_write(fauxsound_codec_ptr,
+			MSM8X16_WCD_A_CDC_RX3_VOL_CTL_B2_CTL, lval);
+		msm8x16_wcd_write(fauxsound_codec_ptr,
+			MSM8X16_WCD_A_CDC_RX3_VOL_CTL_B2_CTL, rval);
 	}
 	return count;
 }
@@ -273,10 +214,10 @@ static ssize_t headphone_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%u %u\n",
-			tabla_read(fauxsound_codec_ptr,
-				TABLA_A_CDC_RX1_VOL_CTL_B2_CTL),
-			tabla_read(fauxsound_codec_ptr,
-				TABLA_A_CDC_RX2_VOL_CTL_B2_CTL));
+			msm8x16_wcd_read(fauxsound_codec_ptr,
+				MSM8X16_WCD_A_CDC_RX1_VOL_CTL_B2_CTL),
+			msm8x16_wcd_read(fauxsound_codec_ptr,
+				MSM8X16_WCD_A_CDC_RX2_VOL_CTL_B2_CTL));
 }
 
 static ssize_t headphone_gain_store(struct kobject *kobj,
@@ -287,20 +228,21 @@ static ssize_t headphone_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
 	if (calc_checksum(lval, rval, chksum)) {
-		tabla_write(fauxsound_codec_ptr,
-			TABLA_A_CDC_RX1_VOL_CTL_B2_CTL, lval);
-		tabla_write(fauxsound_codec_ptr,
-			TABLA_A_CDC_RX2_VOL_CTL_B2_CTL, rval);
+		msm8x16_wcd_write(fauxsound_codec_ptr,
+			MSM8X16_WCD_A_CDC_RX1_VOL_CTL_B2_CTL, lval);
+		msm8x16_wcd_write(fauxsound_codec_ptr,
+			MSM8X16_WCD_A_CDC_RX2_VOL_CTL_B2_CTL, rval);
 	}
 	return count;
 }
 
+/*
 static ssize_t headphone_pa_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%u %u\n",
-		tabla_read(fauxsound_codec_ptr, TABLA_A_RX_HPH_L_GAIN),
-		tabla_read(fauxsound_codec_ptr, TABLA_A_RX_HPH_R_GAIN));
+		msm8x16_wcd_read(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_L_GAIN),
+		msm8x16_wcd_read(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_R_GAIN));
 }
 
 static ssize_t headphone_pa_gain_store(struct kobject *kobj,
@@ -313,24 +255,25 @@ static ssize_t headphone_pa_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
 	if (calc_checksum(lval, rval, chksum)) {
-	gain = tabla_read(fauxsound_codec_ptr, TABLA_A_RX_HPH_L_GAIN);
+	gain = msm8x16_wcd_read(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_L_GAIN);
 	out = (gain & 0xf0) | lval;
-	tabla_write(fauxsound_codec_ptr, TABLA_A_RX_HPH_L_GAIN, out);
+	msm8x16_wcd_write(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_L_GAIN, out);
 
-	status = tabla_read(fauxsound_codec_ptr, TABLA_A_RX_HPH_L_STATUS);
+	status = msm8x16_wcd_read(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_L_STATUS);
 	out = (status & 0x0f) | (lval << 4);
-	tabla_write(fauxsound_codec_ptr, TABLA_A_RX_HPH_L_STATUS, out);
+	msm8x16_wcd_write(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_L_STATUS, out);
 
-	gain = tabla_read(fauxsound_codec_ptr, TABLA_A_RX_HPH_R_GAIN);
+	gain = msm8x16_wcd_read(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_R_GAIN);
 	out = (gain & 0xf0) | rval;
-	tabla_write(fauxsound_codec_ptr, TABLA_A_RX_HPH_R_GAIN, out);
+	msm8x16_wcd_write(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_R_GAIN, out);
 
-	status = tabla_read(fauxsound_codec_ptr, TABLA_A_RX_HPH_R_STATUS);
+	status = msm8x16_wcd_read(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_R_STATUS);
 	out = (status & 0x0f) | (rval << 4);
-	tabla_write(fauxsound_codec_ptr, TABLA_A_RX_HPH_R_STATUS, out);
+	msm8x16_wcd_write(fauxsound_codec_ptr, MSM8X16_WCD_A_RX_HPH_R_STATUS, out);
 	}
 	return count;
 }
+*/
 
 static unsigned int selected_reg = 0xdeadbeef;
 
@@ -349,7 +292,7 @@ static ssize_t sound_reg_read_show(struct kobject *kobj,
 		return -1;
 	else
 		return sprintf(buf, "%u\n",
-			tabla_read(fauxsound_codec_ptr, selected_reg));
+			msm8x16_wcd_read(fauxsound_codec_ptr, selected_reg));
 }
 
 static ssize_t sound_reg_write_store(struct kobject *kobj,
@@ -360,15 +303,9 @@ static ssize_t sound_reg_write_store(struct kobject *kobj,
 	sscanf(buf, "%u %u", &out, &chksum);
 	if (calc_checksum(out, 0, chksum)) {
 		if (selected_reg != 0xdeadbeef)
-			tabla_write(fauxsound_codec_ptr, selected_reg, out);
+			msm8x16_wcd_write(fauxsound_codec_ptr, selected_reg, out);
 	}
 	return count;
-}
-
-static ssize_t sound_control_hw_revision_show (struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
-{
-	return sprintf(buf, "hw_revision: %i\n", wcd9xxx_hw_revision);
 }
 
 static ssize_t sound_control_version_show(struct kobject *kobj,
@@ -391,27 +328,9 @@ static ssize_t sound_control_locked_store(struct kobject *kobj,
 	return count;
 }
 
-static ssize_t sound_control_locked_show(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
+static ssize_t sound_control_locked_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
         return sprintf(buf, "%d\n", snd_ctrl_locked);
-}
-
-static ssize_t sound_control_rec_locked_store(struct kobject *kobj,
-                struct kobj_attribute *attr, const char *buf, size_t count)
-{
-	int inp;
-
-	sscanf(buf, "%d", &inp);
-
-	snd_rec_ctrl_locked = inp;
-
-	return count;
-}
-
-static ssize_t sound_control_rec_locked_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%d\n", snd_rec_ctrl_locked);
 }
 
 static struct kobj_attribute sound_reg_sel_attribute =
@@ -456,11 +375,13 @@ static struct kobj_attribute headphone_gain_attribute =
 		headphone_gain_show,
 		headphone_gain_store);
 
+/*
 static struct kobj_attribute headphone_pa_gain_attribute =
 	__ATTR(gpl_headphone_pa_gain,
 		0666,
 		headphone_pa_gain_show,
 		headphone_pa_gain_store);
+*/
 
 static struct kobj_attribute sound_control_locked_attribute =
 	__ATTR(gpl_sound_control_locked,
@@ -468,21 +389,10 @@ static struct kobj_attribute sound_control_locked_attribute =
 		sound_control_locked_show,
 		sound_control_locked_store);
 
-static struct kobj_attribute sound_control_rec_locked_attribute =
-	__ATTR(gpl_sound_control_rec_locked,
-		0666,
-		sound_control_rec_locked_show,
-		sound_control_rec_locked_store);
-
 static struct kobj_attribute sound_control_version_attribute =
 	__ATTR(gpl_sound_control_version,
 		0444,
 		sound_control_version_show, NULL);
-
-static struct kobj_attribute sound_hw_revision_attribute =
-	__ATTR(gpl_sound_control_hw_revision,
-		0444,
-		sound_control_hw_revision_show, NULL);
 
 static struct attribute *sound_control_attrs[] =
 	{
@@ -490,13 +400,11 @@ static struct attribute *sound_control_attrs[] =
 		&mic_gain_attribute.attr,
 		&speaker_gain_attribute.attr,
 		&headphone_gain_attribute.attr,
-		&headphone_pa_gain_attribute.attr,
+//		&headphone_pa_gain_attribute.attr,
 		&sound_control_locked_attribute.attr,
-		&sound_control_rec_locked_attribute.attr,
 		&sound_reg_sel_attribute.attr,
 		&sound_reg_read_attribute.attr,
 		&sound_reg_write_attribute.attr,
-		&sound_hw_revision_attribute.attr,
 		&sound_control_version_attribute.attr,
 		NULL,
 	};
@@ -542,3 +450,5 @@ module_exit(sound_control_exit);
 MODULE_LICENSE("GPL and additional rights");
 MODULE_AUTHOR("Paul Reioux <reioux@gmail.com>");
 MODULE_DESCRIPTION("Sound Control Module 3.x");
+
+
